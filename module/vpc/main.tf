@@ -123,7 +123,7 @@ resource "tls_private_key" "key" {
     rsa_bits = 4096
 }
 
-# creaing private key
+# creating private key
 resource "local_file" "private-key" {
     content = tls_private_key.key.private_key_pem
     filename = "${var.name}-key.pem"
