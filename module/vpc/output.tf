@@ -17,3 +17,15 @@ output "private_subnet_id" {
 output "private_subnet2_id" {
     value = aws_subnet.private_sub2.id
 }
+
+output "public_key" {
+    value = aws_key_pair.public-key.key_name
+}
+
+output "private_key" {
+    value = tls_private_key.private-key.private_key_pem
+}
+
+output "vpc_cidr_block" {
+    value = aws_vpc.vpc.cidr_block
+}
