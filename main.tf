@@ -17,6 +17,6 @@ data "aws_acm_certificate" "cert" {
 module "vpc" {
   source = "./module/vpc"
   name  = local.name
-  az1   = "eu-west-3a"
-  az2   = "eu-west-3b"
+  az1   = "eu-west-1a"
+  az2   = "eu-west-1b"
 }
