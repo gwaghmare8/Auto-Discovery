@@ -3,6 +3,10 @@ cd jenkins-vault
 terraform init 
 terraform destroy -auto-approve
 
+BUCKET_NAME="auto-discovery-terraform-state"
+REGION="eu-west-1"
+DYNAMODB_TABLE="auto-discovery-terraform-state-dynamodb-lock"
+
 # Delete all object versions
 echo "Deleting all object versions in bucket: $BUCKET_NAME"
 VERSIONS=$(aws s3api list-object-versions --bucket "$BUCKET_NAME" --region "$REGION" \

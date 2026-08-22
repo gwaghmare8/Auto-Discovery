@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BUCKET_NAME="terraform-state-$(aws sts get-caller-identity --query 'Account' --output text)"
-REGION="eu-east-1"
-DYNAMODB_TABLE="application-state-dynamodb-lock"
+BUCKET_NAME="auto-discovery-terraform-state"
+REGION="eu-west-1"
+DYNAMODB_TABLE="auto-discovery-terraform-state-dynamodb-lock"
 
 echo "Creating S3 backend: application-state-s3-backend"
 
