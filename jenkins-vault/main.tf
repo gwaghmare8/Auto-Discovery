@@ -63,7 +63,7 @@ resource "local_file" "private-key" {
     file_permission = "400"
 }
 
-resource "aws_key_pair" "public-key" {
+resource "aws_key_pair" "public_key" {
     key_name   = "${local.name}-key"
     public_key = tls_private_key.keypair.public_key_openssh
 }
@@ -101,10 +101,10 @@ resource "aws_instance" "jenkins-server" {
     volume_type = "gp3" # General Purpose SSD (recommended)
     encrypted   = true  # Enable encryption (best practice)
   }
-user_data = templatefile("./jenkins-user-data.sh", {
- 
-    region    = var.region
-  })
+
+# user_data = templatefile("./jenkins-user-data.sh", {
+#     region    = var.region
+#   })
   metadata_options {
     http_tokens = "required"
  
