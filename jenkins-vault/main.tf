@@ -63,7 +63,7 @@ resource "local_file" "private-key" {
     file_permission = "400"
 }
 
-resource "aws_key_pair" "public-key" {
+resource "aws_key_pair" "public_key" {
     key_name   = "${local.name}-key"
     public_key = tls_private_key.keypair.public_key_openssh
 }
@@ -94,15 +94,15 @@ resource "aws_instance" "jenkins-server" {
   key_name                    = aws_key_pair.public_key.id
   associate_public_ip_address = true
   vpc_security_group_ids      = [aws_security_group.jenkins_security_group.id]
-#   iam_instance_profile        = aws_iam_instance_profile.jenkins_ssm_instance_profile.name
+  iam_instance_profile        = aws_iam_instance_profile.jenkins_ssm_instance_profile.name
   subnet_id = aws_subnet.pub_sub.id
   root_block_device {
     volume_size = 20    # Size in GB
     volume_type = "gp3" # General Purpose SSD (recommended)
     encrypted   = true  # Enable encryption (best practice)
   }
+
 user_data = templatefile("./jenkins-user-data.sh", {
- 
     region    = var.region
   })
   metadata_options {
@@ -115,21 +115,39 @@ user_data = templatefile("./jenkins-user-data.sh", {
   }
 }
 
-# # Attach  AmazonSSMManaged policy to JENKIN IAM role
-# resource "aws_iam_role_policy_attachment" "jenkins_ssm_managed_instance_core" {
-#   role       = aws_iam_role.jenkins-ssm-jenkins-role.name
-#   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-# }
-# # Attach ADMINISTRATOR ACCESS policy to the role
-# resource "aws_iam_role_policy_attachment" "jenkins-admin-role-attachment" {
-#   role       = aws_iam_role.jenkins-ssm-jenkins-role.name
-#   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
-# }
-# # CREATE INSTANCE PROFILE FOR JENKINS SERVER
-# resource "aws_iam_instance_profile" "jenkins_ssm_instance_profile" {
-#   name = "${local.name}-ssm-jenkins-profile"
-#   role = aws_iam_role.jenkins-ssm-jenkins-role.name
-# }
+# Create IAM role for Jenkins server to assume  SSM role
+resource "aws_iam_role" "jenkins-ssm-jenkins-role" {
+  name = "${local.name}-ssm-jenkins-role"
+ 
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+# Attach  AmazonSSMManaged policy to JENKIN IAM role
+resource "aws_iam_role_policy_attachment" "jenkins_ssm_managed_instance_core" {
+  role       = aws_iam_role.jenkins-ssm-jenkins-role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+# Attach ADMINISTRATOR ACCESS policy to the role
+resource "aws_iam_role_policy_attachment" "jenkins-admin-role-attachment" {
+  role       = aws_iam_role.jenkins-ssm-jenkins-role.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+# CREATE INSTANCE PROFILE FOR JENKINS SERVER
+resource "aws_iam_instance_profile" "jenkins_ssm_instance_profile" {
+  name = "${local.name}-ssm-jenkins-profile"
+  role = aws_iam_role.jenkins-ssm-jenkins-role.name
+}
  
 # Create jenkins security group
 resource "aws_security_group" "jenkins_security_group" {
