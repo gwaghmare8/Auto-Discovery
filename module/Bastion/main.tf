@@ -2,7 +2,7 @@
 resource "aws_security_group" "bastion-security-group" {
   name        = "${var.name}-bastion-sg"
   description = "Security group for Bastion host"
-  vpc_id      = var.vpc_id
+  vpc_id      = var.vpc
 
   egress {
     from_port   = 0
