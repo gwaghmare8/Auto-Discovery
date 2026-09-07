@@ -104,7 +104,7 @@ resource "aws_autoscaling_group" "bastion-asg" {
   }
 }
 
-# Creat ASG policy for Baston Host
+# Created ASG policy for Baston Host
 resource "aws_autoscaling_policy" "bastion-asg-policy" {
   name                   = "${var.name}-bastion-asg-policy"
   adjustment_type        = "ChangeInCapacity"
