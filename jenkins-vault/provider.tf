@@ -18,11 +18,11 @@ provider "aws" {
 terraform {
   backend "s3" {
     bucket       = "auto-discovery-terraform-state"
-    use_lockfile = false
+    # use_lockfile = false
     key          = "infrastructure/terraform.tfstate"
     region       = "eu-west-1"
     encrypt      = true
     dynamodb_table = "auto-discovery-terraform-state-dynamodb-lock"
-    # profile      = "default"
+    profile      = "default"
   }
 }
