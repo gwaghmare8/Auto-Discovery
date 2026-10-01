@@ -1,0 +1,14 @@
+variable "name" {}
+variable "vpc-id" {}
+variable "bastion" {}
+variable "key-name" {}
+variable "pri-subnet1" {}
+variable "pri-subnet2" {}
+variable "pub-subnet1" {}
+variable "pub-subnet2" {}
+variable "acm-cert-arn" {}
+variable "domain" {}
+variable "nexus-ip" {}
+variable "nr_key" {}
+variable "nr_acc_id" {}
+variable "ansible" {}
