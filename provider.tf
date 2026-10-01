@@ -14,3 +14,7 @@ terraform {
     # profile      = "default"
   }
 }
+
+provider "vault" {
+  address = "https://vault.gaurav-devops.site"
+}
