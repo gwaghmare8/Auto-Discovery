@@ -10,18 +10,34 @@ pipeline {
         pollSCM('* * * * *') // Runs every minute
     }
     environment {
-        SLACKCHANNEL = '1st-june-2026-auto-discovery-project-team1'
+        SLACKCHANNEL = 'auto-discovery-pipeline-alerts'
         SLACKCREDENTIALS = credentials('slack-cred')
     }
    
     stages {
+        stage('Secret Scan') {
+            steps {
+                script {
+                    // Scans the working tree and git history; findings are redacted in the log
+                    def gitleaksStatus = sh(
+                        script: '''docker run --rm --user $(id -u):$(id -g) -v "$PWD":/repo zricethezav/gitleaks:v8.18.4 \
+                            detect --source /repo --redact --verbose \
+                            --report-format json --report-path /repo/gitleaks-report.json''',
+                        returnStatus: true
+                    )
+                    archiveArtifacts artifacts: 'gitleaks-report.json', allowEmptyArchive: true
+                    if (gitleaksStatus != 0) {
+                        error 'Gitleaks found hardcoded secrets - rotate them and remove them from the repo'
+                    }
+                }
+            }
+        }
         stage('IAC Scan') {
             steps {
                 script {
-                    sh 'pip install pipenv'
-                    sh 'pip3 install checkov'
-                    def checkovStatus = sh(script: 'pipenv run checkov -d . -o cli --output-file checkov-results.txt --quiet', returnStatus: true)
-                    junit allowEmptyResults: true, testResults: 'checkov-results.txt'
+                    sh 'pip3 install --user checkov'
+                    def checkovStatus = sh(script: 'export PATH=$PATH:$HOME/.local/bin && checkov -d . -o cli --quiet > checkov-results.txt', returnStatus: true)
+                    archiveArtifacts artifacts: 'checkov-results.txt', allowEmptyArchive: true
                     // if (checkovStatus != 0) {
                     //     error 'Checkov found some issues'
                     // }
@@ -51,7 +67,7 @@ pipeline {
         stage('Terraform action') {
             steps {
                 script {
-                    sh "terraform ${action} -auto-approve"
+                    sh "terraform ${params.action} -auto-approve"
                 }
             }
         }

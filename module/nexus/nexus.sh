@@ -8,8 +8,7 @@ set -e
 NEXUS_USER="nexus"
 NEXUS_INSTALL_DIR="/opt/nexus"
 NEXUS_DATA_DIR="/opt/sonatype-work"
-DOWNLOAD_URL="https://download.sonatype.com/nexus/3/nexus-3.80.0-06-linux-x86_64.tar.gz
-"
+DOWNLOAD_URL="https://download.sonatype.com/nexus/3/nexus-3.80.0-06-linux-x86_64.tar.gz"
 
 # 1. Install Java (required by Nexus)
 echo "Updating packages..."
@@ -104,3 +103,24 @@ sudo systemctl start nexus
 echo " Nexus is installed and running on port 8081"
 echo "Check status: sudo systemctl status nexus"
 #echo "Default admin password: sudo cat ${NEXUS_DATA_DIR}/admin.password"
+
+
+# 10. Set the Nexus admin password from SSM (NEXUS_PASSWORD_PARAM / AWS_REGION are exported by user-data)
+echo "Installing AWS CLI..."
+sudo dnf install -y unzip
+curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install
+NEXUS_ADMIN_PASSWORD=$(/usr/local/bin/aws ssm get-parameter --name "${NEXUS_PASSWORD_PARAM}" --with-decryption --query Parameter.Value --output text --region "${AWS_REGION}")
+
+echo "Waiting for Nexus to generate the initial admin password..."
+for i in $(seq 1 60); do
+  if [ -f "${NEXUS_DATA_DIR}/nexus3/admin.password" ] && curl -sf http://localhost:8081/service/rest/v1/status > /dev/null; then
+    break
+  fi
+  sleep 10
+done
+INITIAL_PASSWORD=$(cat "${NEXUS_DATA_DIR}/nexus3/admin.password")
+curl -sf -u "admin:${INITIAL_PASSWORD}" -X PUT -H "Content-Type: text/plain" \
+  --data "${NEXUS_ADMIN_PASSWORD}" \
+  http://localhost:8081/service/rest/v1/security/users/admin/change-password
+echo "Nexus admin password set from SSM"

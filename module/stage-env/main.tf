@@ -10,12 +10,12 @@ resource "aws_security_group" "stage-security-group" {
     protocol        = "tcp"
     security_groups = [var.bastion, var.ansible]
   }
- 
+
   ingress {
-    description = "HTTP access from ALB"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
+    description     = "HTTP access from ALB"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
     security_groups = [aws_security_group.stage-elb-security-group.id]
   }
   egress {
@@ -52,11 +52,17 @@ resource "aws_launch_template" "stage_launch_template" {
   instance_type = "t2.medium"
   key_name      = var.key-name
   user_data = base64encode(templatefile("./module/stage-env/docker-script.sh", {
-    nexus-ip   = var.nexus-ip,
-    nr_key     = var.nr_key,
-    nr_acc_id  = var.nr_acc_id
+    nexus-ip             = var.nexus-ip,
+    nr_key_param         = var.nr_key_param,
+    nexus_password_param = var.nexus_password_param,
+    region               = var.region,
+    nr_acc_id            = var.nr_acc_id
   }))
- 
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.stage_profile.name
+  }
+
   network_interfaces {
     security_groups = [aws_security_group.stage-security-group.id]
   }
@@ -64,7 +70,7 @@ resource "aws_launch_template" "stage_launch_template" {
     http_tokens = "required"
   }
 }
- 
+
 # Create Auto Scaling Group
 resource "aws_autoscaling_group" "stage_autoscaling_group" {
   name                      = "${var.name}-stage-asg"
@@ -80,7 +86,7 @@ resource "aws_autoscaling_group" "stage_autoscaling_group" {
   }
   vpc_zone_identifier = [var.pri-subnet1, var.pri-subnet2]
   target_group_arns   = [aws_lb_target_group.stage-target-group.arn]
- 
+
   tag {
     key                 = "Name"
     value               = "${var.name}-stage-asg"
@@ -100,7 +106,7 @@ resource "aws_autoscaling_policy" "stage-asg-policy" {
     target_value = 70.0
   }
 }
- 
+
 # Create Application Load Balancer for stage
 resource "aws_lb" "stage_LoadBalancer" {
   name               = "${var.name}-stage-LB"
@@ -135,7 +141,7 @@ resource "aws_security_group" "stage-elb-security-group" {
     Name = "${var.name}-stage-elb-sg"
   }
 }
- 
+
 #Create Target group for load Balancer
 resource "aws_lb_target_group" "stage-target-group" {
   name        = "${var.name}-stage-tg"
@@ -154,7 +160,7 @@ resource "aws_lb_target_group" "stage-target-group" {
     Name = "${var.name}-stage-tg"
   }
 }
- 
+
 # Create load balance listener for http
 resource "aws_lb_listener" "stage_load_balancer_listener_http" {
   load_balancer_arn = aws_lb.stage_LoadBalancer.arn
@@ -178,14 +184,8 @@ resource "aws_lb_listener" "stage_load_balancer_listener_https" {
   }
 }
 # Create Route 53 record for stage server
-data "aws_route53_zone" "team1-acp-zone" {
-  name         = var.domain
-  private_zone = false
-}
- 
-# Create Route 53 record for stage server
 resource "aws_route53_record" "stage-record" {
-  zone_id = data.aws_route53_zone.team1-acp-zone.zone_id
+  zone_id = var.hosted_zone_id
   name    = "stage.${var.domain}"
   type    = "A"
   alias {
@@ -194,4 +194,55 @@ resource "aws_route53_record" "stage-record" {
     evaluate_target_health = true
   }
 }
- 
+
+
+# IAM role so the stage instances can use SSM and read the New Relic API key
+resource "aws_iam_role" "stage_role" {
+  name = "${var.name}-stage-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "stage_ssm" {
+  role       = aws_iam_role.stage_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Allow reading the New Relic API key from SSM Parameter Store
+resource "aws_iam_role_policy" "newrelic_key_read" {
+  name = "${var.name}-newrelic-key-read"
+  role = aws_iam_role.stage_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:*:*:parameter${var.nr_key_param}"
+    }]
+  })
+}
+
+resource "aws_iam_instance_profile" "stage_profile" {
+  name = "${var.name}-stage-profile"
+  role = aws_iam_role.stage_role.name
+}
+
+# Allow reading the admin password from SSM Parameter Store
+resource "aws_iam_role_policy" "nexus_password_read" {
+  name = "${var.name}-nexus-password-read"
+  role = aws_iam_role.stage_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:*:*:parameter${var.nexus_password_param}"
+    }]
+  })
+}

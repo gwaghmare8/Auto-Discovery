@@ -43,3 +43,8 @@ terraform.rc
 # Uncomment the line below if you want to ignore planout files.
 # planout
 .terraform.lock.hcl
+
+# Private keys and local secrets
+*.pem
+*.key
+secrets.auto.tfvars

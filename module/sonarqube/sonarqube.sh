@@ -7,7 +7,7 @@ SONAR_VERSION="25.5.0.107428"
 SONAR_USER="sonaruser"
 SONAR_DIR="/opt/sonarqube"
 DB_USER="sonar"
-DB_PASSWORD="StrongPassword123"
+DB_PASSWORD=$(openssl rand -hex 16)  # generated per instance, only used by SonarQube -> PostgreSQL
 DB_NAME="sonarqube"
 SONAR_ZIP="sonarqube-${SONAR_VERSION}.zip"
 SONAR_URL="https://binaries.sonarsource.com/Distribution/sonarqube/${SONAR_ZIP}"
@@ -87,7 +87,7 @@ apt install -y nginx
 cat <<EOF > /etc/nginx/sites-available/sonarqube
 server {
     listen 80;
-    server_name sonarqube.set30.site;
+    server_name sonarqube.gaurav-devops.site;
 
     location / {
         proxy_pass http://localhost:9000;
@@ -106,3 +106,21 @@ EOF
 # Enable the site and restart NGINX
 ln -s /etc/nginx/sites-available/sonarqube /etc/nginx/sites-enabled/
 nginx -t && systemctl restart nginx
+
+
+# === SET SONARQUBE ADMIN PASSWORD FROM SSM (SONARQUBE_PASSWORD_PARAM / AWS_REGION are exported by user-data) ===
+apt install -y curl
+curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install
+SONAR_ADMIN_PASSWORD=$(/usr/local/bin/aws ssm get-parameter --name "${SONARQUBE_PASSWORD_PARAM}" --with-decryption --query Parameter.Value --output text --region "${AWS_REGION}")
+
+echo "Waiting for SonarQube to start..."
+for i in $(seq 1 60); do
+  curl -s http://localhost:9000/api/system/status | grep -q '"status":"UP"' && break
+  sleep 10
+done
+curl -sf -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
+  --data-urlencode "login=admin" \
+  --data-urlencode "previousPassword=admin" \
+  --data-urlencode "password=${SONAR_ADMIN_PASSWORD}"
+echo "SonarQube admin password set from SSM"

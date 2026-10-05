@@ -1,3 +1,3 @@
 output "db_endpoint" {
-  value = aws_db_instance.team1_mysql_database.endpoint
+  value = aws_db_instance.petclinic_mysql.endpoint
 }

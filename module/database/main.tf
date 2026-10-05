@@ -1,6 +1,6 @@
 
 #  RDS Subnet Group
-resource "aws_db_subnet_group" "team1_db_subnet_group" {
+resource "aws_db_subnet_group" "rds_subnet_group" {
   name        = "${var.name}-db_subnet"
   subnet_ids  = [var.private_subnet1_id, var.private_subnet2_id] # Use private subnets for security
   description = "Subnet group for Multi-AZ RDS deployment"
@@ -13,9 +13,9 @@ data "vault_generic_secret" "vault-secret" {
   path = "secret/database"
 }
 
-resource "aws_db_instance" "team1_mysql_database" {
+resource "aws_db_instance" "petclinic_mysql" {
   identifier             = "${var.name}-db"
-  db_subnet_group_name   = aws_db_subnet_group.team1_db_subnet_group.name
+  db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids = [aws_security_group.RDS-security-group.id]
   db_name                = "petclinic"
   # High Availability
@@ -52,7 +52,7 @@ resource "aws_security_group" "RDS-security-group" {
     from_port       = 3306
     to_port         = 3306
     protocol        = "tcp"
-    security_groups = [var.bastion-security-group,var.stage-security-group,var.prod-security-group ]
+    security_groups = [var.bastion-security-group, var.stage-security-group, var.prod-security-group]
   }
   egress {
     description = "Allow all outbound traffic"

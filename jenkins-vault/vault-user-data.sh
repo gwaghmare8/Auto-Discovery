@@ -89,6 +89,9 @@ TOKEN=$(</home/ubuntu/token.txt)
 vault login $TOKEN
 # create secret engine and store secrets for the application database
 vault secrets enable -path=secret/ kv #directory to store secrets on the vault server
-vault kv put secret/database username=petclinic password=petclinic
+# the DB password is generated here and only ever stored in Vault (Terraform reads it for RDS)
+DB_PASSWORD=$(openssl rand -hex 16)
+vault kv put secret/database username=petclinic password="$DB_PASSWORD"
+unset DB_PASSWORD
 # Set hostname to Vault
 sudo hostnamectl set-hostname Vault
