@@ -12,10 +12,10 @@ resource "aws_security_group" "prod-sg" {
   }
 
   ingress {
-    description = "HTTP access from ALB"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
+    description     = "HTTP access from ALB"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
     security_groups = [aws_security_group.prod-elb-sg.id]
   }
   egress {
@@ -52,10 +52,16 @@ resource "aws_launch_template" "prod_lnch_tmpl" {
   instance_type = "t2.medium"
   key_name      = var.key-name
   user_data = base64encode(templatefile("./module/prod-env/docker-script.sh", {
-    nexus-ip   = var.nexus-ip,
-    nr_key     = var.nr_key,
-    nr_acc_id  = var.nr_acc_id
+    nexus-ip             = var.nexus-ip,
+    nr_key_param         = var.nr_key_param,
+    nexus_password_param = var.nexus_password_param,
+    region               = var.region,
+    nr_acc_id            = var.nr_acc_id
   }))
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.prod_profile.name
+  }
 
   network_interfaces {
     security_groups = [aws_security_group.prod-sg.id]
@@ -178,14 +184,8 @@ resource "aws_lb_listener" "prod_load_balancer_listener_https" {
   }
 }
 # Create Route 53 record for prod server
-data "aws_route53_zone" "team2-acp-zone" {
-  name         = var.domain
-  private_zone = false
-}
-
-# Create Route 53 record for prod server
 resource "aws_route53_record" "prod-record" {
-  zone_id = data.aws_route53_zone.team2-acp-zone.zone_id
+  zone_id = var.hosted_zone_id
   name    = "prod.${var.domain}"
   type    = "A"
   alias {
@@ -193,4 +193,55 @@ resource "aws_route53_record" "prod-record" {
     zone_id                = aws_lb.prod_LB.zone_id
     evaluate_target_health = true
   }
+}
+
+# IAM role so the prod instances can use SSM and read the New Relic API key
+resource "aws_iam_role" "prod_role" {
+  name = "${var.name}-prod-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "prod_ssm" {
+  role       = aws_iam_role.prod_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Allow reading the New Relic API key from SSM Parameter Store
+resource "aws_iam_role_policy" "newrelic_key_read" {
+  name = "${var.name}-newrelic-key-read"
+  role = aws_iam_role.prod_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:*:*:parameter${var.nr_key_param}"
+    }]
+  })
+}
+
+resource "aws_iam_instance_profile" "prod_profile" {
+  name = "${var.name}-prod-profile"
+  role = aws_iam_role.prod_role.name
+}
+
+# Allow reading the admin password from SSM Parameter Store
+resource "aws_iam_role_policy" "nexus_password_read" {
+  name = "${var.name}-nexus-password-read"
+  role = aws_iam_role.prod_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:*:*:parameter${var.nexus_password_param}"
+    }]
+  })
 }

@@ -18,7 +18,7 @@ data "aws_ami" "redhat" {
 
 # Creating ansible security group
 resource "aws_security_group" "ansible-security-group" {
-  name        = "${var.name}ansible-sg"
+  name        = "${var.name}-ansible-sg"
   description = "Allow ssh"
   vpc_id      = var.vpc
 
@@ -48,8 +48,17 @@ resource "aws_instance" "ansible-server" {
   iam_instance_profile   = aws_iam_instance_profile.IAM-ansible-profile.name
   vpc_security_group_ids = [aws_security_group.ansible-security-group.id]
   key_name               = var.keypair
+  depends_on             = [null_resource.ansible-setup]
   subnet_id              = var.subnet_id
-  user_data              = locals.ansible_userdata
+  user_data = templatefile("${path.module}/ansible-script.sh", {
+    private_key          = var.private-key,
+    nexus_ip             = var.nexus-ip,
+    nr_key_param         = var.nr_key_param,
+    nexus_password_param = var.nexus_password_param,
+    region               = var.region,
+    nr_acc_id            = var.nr_acc_id,
+    artifacts_bucket     = var.artifacts_bucket
+  })
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
@@ -92,13 +101,27 @@ resource "aws_iam_role_policy_attachment" "IAM-s3-policy" {
 }
 # Create IAM instance profile for ansible
 resource "aws_iam_instance_profile" "IAM-ansible-profile" {
-  name = "ansible-discovery-profile1"
+  name = "ansible-discovery-profile"
   role = aws_iam_role.ansible-IAM-role.name
 }
 resource "null_resource" "ansible-setup" {
   provisioner "local-exec" {
     command = <<EOT
-      aws s3 cp --recursive ${path.module}/scripts/ s3://pet-adoption-state-bucket-one-team-1/ansible-script/ 
+      aws s3 cp --recursive ${path.module}/scripts/ s3://${var.artifacts_bucket}/ansible-script/ 
     EOT
-  } 
+  }
+}
+
+# Allow reading the New Relic API key from SSM Parameter Store
+resource "aws_iam_role_policy" "newrelic_key_read" {
+  name = "${var.name}-newrelic-key-read"
+  role = aws_iam_role.ansible-IAM-role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:*:*:parameter${var.nr_key_param}"
+    }]
+  })
 }

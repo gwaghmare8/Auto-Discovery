@@ -15,10 +15,10 @@ resource "aws_security_group" "Nexus-security-group" {
   }
 
   ingress {
-    description     = "custom (port 8085)"
-    from_port       = 8085
-    to_port         = 8085
-    protocol        = "tcp"
+    description = "custom (port 8085)"
+    from_port   = 8085
+    to_port     = 8085
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -164,12 +164,17 @@ data "aws_ami" "centos" {
 
 # Create Nexus Server
 resource "aws_instance" "nexus-server" {
-  ami                         = data.aws_ami.centos.id #centOs stream_9
-  instance_type               = "t2.medium"
-  vpc_security_group_ids      = [aws_security_group.Nexus-security-group.id]
-  key_name                    = var.keypair
-  subnet_id                   = var.subnet_id
-  user_data                   = file("${path.module}/nexus.sh")
+  ami                    = data.aws_ami.centos.id #centOs stream_9
+  instance_type          = "t2.medium"
+  vpc_security_group_ids = [aws_security_group.Nexus-security-group.id]
+  key_name               = var.keypair
+  subnet_id              = var.subnet_id
+  user_data = join("\n", [
+    "#!/bin/bash",
+    "NEXUS_PASSWORD_PARAM=${var.nexus_password_param}",
+    "AWS_REGION=${var.region}",
+    file("${path.module}/nexus.sh")
+  ])
   iam_instance_profile        = aws_iam_instance_profile.nexus_profile.name
   associate_public_ip_address = true
 
@@ -182,13 +187,27 @@ resource "null_resource" "update_jenkins" {
   depends_on = [aws_instance.nexus-server]
 
   provisioner "local-exec" {
-  command = <<EOT
+    command = <<EOT
 sudo tee /etc/docker/daemon.json > /dev/null <<EOF
 {
-  "insecure-registries": ["13.38.55.59:8085"]
+  "insecure-registries": ["${aws_instance.nexus-server.public_ip}:8085"]
 }
 EOF
 sudo systemctl restart docker
 EOT
+  }
 }
+
+# Allow reading the admin password from SSM Parameter Store
+resource "aws_iam_role_policy" "nexus_password_read" {
+  name = "${var.name}-nexus-password-read"
+  role = aws_iam_role.nexus-role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:*:*:parameter${var.nexus_password_param}"
+    }]
+  })
 }

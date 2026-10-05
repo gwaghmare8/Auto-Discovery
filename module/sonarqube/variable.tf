@@ -22,3 +22,5 @@ variable "certificate" {}
 variable "hosted_zone_id" {}
 variable "domain_name" {}
 variable "subnets" {}
+variable "sonarqube_password_param" {}
+variable "region" {}

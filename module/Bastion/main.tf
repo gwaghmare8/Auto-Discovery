@@ -40,7 +40,7 @@ resource "aws_iam_role_policy_attachment" "bastion-ssm-policy" {
 
 # create IAM instance profile
 resource "aws_iam_instance_profile" "bastion-ssm-profile" {
-  name = "bastion-ssm-profile1"
+  name = "bastion-ssm-profile"
   role = aws_iam_role.bastion-ssm-role.name
 }
 
@@ -72,11 +72,11 @@ resource "aws_launch_template" "bastion-launchtemplate" {
     delete_on_termination       = true
     security_groups             = [aws_security_group.bastion-security-group.id]
   }
-  user_data = base64encode(templatefile("./module/Bastion/bastion-user-data.sh", {
-    privatekey = var.privatekey,
-    nr_key     = var.nr_key,
-    nr_acc_id  = var.nr_acc_id
-    region     = var.region
+  user_data = base64encode(templatefile("./module/bastion/bastion-user-data.sh", {
+    privatekey   = var.privatekey,
+    nr_key_param = var.nr_key_param,
+    nr_acc_id    = var.nr_acc_id
+    region       = var.region
   }))
   tags = {
     Name = "${var.name}-bastion"
@@ -116,4 +116,17 @@ resource "aws_autoscaling_policy" "bastion-asg-policy" {
     }
     target_value = 50.0
   }
+}
+# Allow reading the New Relic API key from SSM Parameter Store
+resource "aws_iam_role_policy" "newrelic_key_read" {
+  name = "${var.name}-newrelic-key-read"
+  role = aws_iam_role.bastion-ssm-role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:*:*:parameter${var.nr_key_param}"
+    }]
+  })
 }

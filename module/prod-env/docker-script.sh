@@ -43,7 +43,8 @@ NEXUS_IP="${nexus-ip}:8085"
  
 #Function to Login to dockerhub
 authenticate_docker() {
-    docker login --username=admin --password=admin123 \$NEXUS_IP
+    NEXUS_PASSWORD=\$(/usr/local/bin/aws ssm get-parameter --name "${nexus_password_param}" --with-decryption --query Parameter.Value --output text --region ${region})
+    echo "\$NEXUS_PASSWORD" | docker login --username=admin --password-stdin \$NEXUS_IP
 }
  
 #Function to check for latest image on dockerhub
@@ -84,7 +85,12 @@ sudo chmod 777 /home/ec2-user/scripts/script.sh
 sudo systemctl restart docker
 
 #Install New Relic CLI, Set hostname for the instance
-curl -Ls https://download.newrelic.com/install/newrelic-cli/scripts/install.sh | bash && sudo NEW_RELIC_API_KEY="${nr_key}" NEW_RELIC_ACCOUNT_ID="${nr_acc_id}" NEW_RELIC_REGION="EU" /usr/local/bin/newrelic install -y
+# Install AWS CLI v2 (needed to read the New Relic key from SSM)
+sudo yum install -y unzip
+curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install
+NR_KEY=$(/usr/local/bin/aws ssm get-parameter --name "${nr_key_param}" --with-decryption --query Parameter.Value --output text --region ${region})
+curl -Ls https://download.newrelic.com/install/newrelic-cli/scripts/install.sh | bash && sudo NEW_RELIC_API_KEY="$NR_KEY" NEW_RELIC_ACCOUNT_ID="${nr_acc_id}" NEW_RELIC_REGION="EU" /usr/local/bin/newrelic install -y
 
 #setting the host name
 sudo hostnamectl set-hostname prod-instance

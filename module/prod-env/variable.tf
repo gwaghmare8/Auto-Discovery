@@ -9,6 +9,9 @@ variable "pub-subnet2" {}
 variable "acm-cert-arn" {}
 variable "domain" {}
 variable "nexus-ip" {}
-variable "nr_key" {}
+variable "nr_key_param" {}
 variable "nr_acc_id" {}
 variable "ansible" {}
+variable "hosted_zone_id" {}
+variable "region" {}
+variable "nexus_password_param" {}

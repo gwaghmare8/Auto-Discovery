@@ -72,12 +72,17 @@ data "aws_ami" "ubuntu" {
 
 # Create Sonarqube Server
 resource "aws_instance" "sonarqube-server" {
-  ami                         = data.aws_ami.ubuntu.id #ubuntu 
-  instance_type               = "t2.medium"
-  vpc_security_group_ids      = [aws_security_group.sonarqube-sg.id]
-  key_name                    = var.keypair
-  subnet_id                   = var.subnet_id
-  user_data                   = file("${path.module}/sonarqube.sh")
+  ami                    = data.aws_ami.ubuntu.id #ubuntu 
+  instance_type          = "t2.medium"
+  vpc_security_group_ids = [aws_security_group.sonarqube-sg.id]
+  key_name               = var.keypair
+  subnet_id              = var.subnet_id
+  user_data = join("\n", [
+    "#!/bin/bash",
+    "SONARQUBE_PASSWORD_PARAM=${var.sonarqube_password_param}",
+    "AWS_REGION=${var.region}",
+    file("${path.module}/sonarqube.sh")
+  ])
   iam_instance_profile        = aws_iam_instance_profile.sonarqube_profile.name
   associate_public_ip_address = true
   root_block_device {
@@ -171,4 +176,18 @@ resource "aws_iam_instance_profile" "sonarqube_profile" {
 resource "aws_iam_role_policy_attachment" "ssm_access" {
   role       = aws_iam_role.sonarqube-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Allow reading the admin password from SSM Parameter Store
+resource "aws_iam_role_policy" "sonarqube_password_read" {
+  name = "${var.name}-sonarqube-password-read"
+  role = aws_iam_role.sonarqube-role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:*:*:parameter${var.sonarqube_password_param}"
+    }]
+  })
 }

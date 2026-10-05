@@ -1,5 +1,3 @@
-locals {
-  ansible_userdata = <<-EOF
 #!/bin/bash
 set -e
 
@@ -28,7 +26,7 @@ sudo dnf install -y ansible-core
 # -------------------------------
 sudo mkdir -p /home/ec2-user/.ssh
 sudo tee /home/ec2-user/.ssh/id_rsa > /dev/null <<EOF2
-${var.private-key}
+${private_key}
 EOF2
 sudo chmod 400 /home/ec2-user/.ssh/id_rsa
 sudo chown ec2-user:ec2-user /home/ec2-user/.ssh/id_rsa
@@ -45,9 +43,9 @@ sudo chown ec2-user:ec2-user /home/ec2-user/.ssh/config
 # 5️⃣ Pull Ansible scripts from S3
 # -------------------------------
 sudo mkdir -p /home/ec2-user/ansible
-sudo aws s3 cp s3://pet-adoption-state-bucket-one-team-1/ansible-script/prod-bashscript.sh /home/ec2-user/ansible/prod-bashscript.sh
-sudo aws s3 cp s3://pet-adoption-state-bucket-one-team-1/ansible-script/stage-bashscript.sh /home/ec2-user/ansible/stage-bashscript.sh
-sudo aws s3 cp s3://pet-adoption-state-bucket-one-team-1/ansible-script/deployment.yml /home/ec2-user/ansible/deployment.yml
+sudo aws s3 cp s3://${artifacts_bucket}/ansible-script/prod-script.sh /home/ec2-user/ansible/prod-script.sh
+sudo aws s3 cp s3://${artifacts_bucket}/ansible-script/stage-script.sh /home/ec2-user/ansible/stage-script.sh
+sudo aws s3 cp s3://${artifacts_bucket}/ansible-script/deployment.yaml /home/ec2-user/ansible/deployment.yaml
 
 # Set permissions
 sudo chmod 755 /home/ec2-user/ansible/*.sh
@@ -57,7 +55,9 @@ sudo chown -R ec2-user:ec2-user /home/ec2-user/ansible
 # 6️⃣ Create Ansible variable file
 # -------------------------------
 sudo tee /home/ec2-user/ansible/ansible_vars_file.yml > /dev/null <<EOF2
-NEXUS_IP: ${var.nexus-ip}:8085
+NEXUS_IP: ${nexus_ip}:8085
+NEXUS_PASSWORD_PARAM: ${nexus_password_param}
+AWS_REGION: ${region}
 EOF2
 sudo chown ec2-user:ec2-user /home/ec2-user/ansible/ansible_vars_file.yml
 sudo chmod 644 /home/ec2-user/ansible/ansible_vars_file.yml
@@ -66,21 +66,20 @@ sudo chmod 644 /home/ec2-user/ansible/ansible_vars_file.yml
 # 7️⃣ Configure cron jobs for scripts
 # -------------------------------
 sudo crontab -u ec2-user -l > /tmp/mycron || true
-echo "* * * * * sh /home/ec2-user/ansible/prod-bashscript.sh" >> /tmp/mycron
-echo "* * * * * sh /home/ec2-user/ansible/stage-bashscript.sh" >> /tmp/mycron
+echo "* * * * * sh /home/ec2-user/ansible/prod-script.sh" >> /tmp/mycron
+echo "* * * * * sh /home/ec2-user/ansible/stage-script.sh" >> /tmp/mycron
 sudo crontab -u ec2-user /tmp/mycron
 rm -f /tmp/mycron
 
 # -------------------------------
 # 8️⃣ Install New Relic
 # -------------------------------
+NR_KEY=$(aws ssm get-parameter --name "${nr_key_param}" --with-decryption --query Parameter.Value --output text --region ${region})
 curl -Ls https://download.newrelic.com/install/newrelic-cli/scripts/install.sh | bash
-sudo NEW_RELIC_API_KEY="${var.nr_key}" NEW_RELIC_ACCOUNT_ID="${var.nr_acc_id}" NEW_RELIC_REGION=EU /usr/local/bin/newrelic install -y
+sudo NEW_RELIC_API_KEY="$NR_KEY" NEW_RELIC_ACCOUNT_ID="${nr_acc_id}" NEW_RELIC_REGION=EU /usr/local/bin/newrelic install -y
 
 # -------------------------------
 # 9️⃣ Set hostname
 # -------------------------------
 sudo hostnamectl set-hostname ansible-server
 
-EOF
-}
