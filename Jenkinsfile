@@ -64,6 +64,7 @@ pipeline {
                 // The Vault provider's own IMDS lookup times out, so hand it the instance role's
                 // temporary credentials through the standard AWS environment variables
                 sh '''
+                    set +x
                     eval "$(aws configure export-credentials --format env)"
                     export AWS_DEFAULT_REGION=eu-west-1
                     terraform plan
@@ -74,6 +75,7 @@ pipeline {
             steps {
                 script {
                     sh """
+                        set +x
                         eval "\$(aws configure export-credentials --format env)"
                         export AWS_DEFAULT_REGION=eu-west-1
                         terraform ${params.action} -auto-approve

@@ -16,6 +16,10 @@ terraform {
 
 provider "vault" {
   address = "https://vault.gaurav-devops.site"
-  auth_login_aws { role = "jenkins-terraform" }
-
+  auth_login_aws {
+    role = "jenkins-terraform"
+    # sign the login for the global STS endpoint, which is Vault's default
+    aws_region       = "us-east-1"
+    aws_sts_endpoint = "https://sts.amazonaws.com"
+  }
 }
