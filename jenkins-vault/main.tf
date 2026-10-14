@@ -357,6 +357,7 @@ resource "aws_instance" "vault" {
     encrypted   = true
   }
   # User data script to install Jenkins and required tools
+  depends_on = [aws_iam_role_policy.vault_resolve_jenkins_role, aws_iam_role_policy.vault_init_secret]
   user_data = templatefile("./vault-user-data.sh", {
     region           = var.region,
     VAULT_VERSION    = "1.18.3",
@@ -544,6 +545,21 @@ resource "aws_iam_role_policy" "vault_init_secret" {
       Effect   = "Allow"
       Action   = ["secretsmanager:CreateSecret", "secretsmanager:PutSecretValue"]
       Resource = "arn:aws:secretsmanager:*:*:secret:${var.vault_init_secret_name}-*"
+    }]
+  })
+}
+
+
+# Vault resolves the bound Jenkins role to its unique ID when the AWS auth role is created
+resource "aws_iam_role_policy" "vault_resolve_jenkins_role" {
+  name = "${local.name}-vault-resolve-jenkins-role"
+  role = aws_iam_role.vault_ssm_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:GetRole"]
+      Resource = aws_iam_role.jenkins-ssm-jenkins-role.arn
     }]
   })
 }
