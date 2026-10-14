@@ -80,18 +80,46 @@ EOT
 sudo systemctl enable vault
 sudo systemctl start vault
 sleep 20
-# Initialize the vault server
-touch /home/ubuntu/vault_init.log
-vault operator init > /home/ubuntu/vault_init.log
-grep -o 'hvs\.[A-Za-z0-9]\{24\}' /home/ubuntu/vault_init.log > /home/ubuntu/token.txt
-TOKEN=$(</home/ubuntu/token.txt)
-# Login to Vault
-vault login $TOKEN
+# Initialize the vault server (output is kept in memory only, never written to disk)
+INIT_OUTPUT=$(vault operator init -format=json)
+export VAULT_TOKEN=$(echo "$INIT_OUTPUT" | jq -r .root_token)
+
+# Install AWS CLI v2 so the init output (root token + recovery keys) can be stored in Secrets Manager
+curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install
+/usr/local/bin/aws secretsmanager create-secret --name "${init_secret_name}" \
+  --description "Vault init output: root token and recovery keys" \
+  --secret-string "$INIT_OUTPUT" --region ${region} \
+  || /usr/local/bin/aws secretsmanager put-secret-value --secret-id "${init_secret_name}" \
+  --secret-string "$INIT_OUTPUT" --region ${region}
+unset INIT_OUTPUT
+
 # create secret engine and store secrets for the application database
 vault secrets enable -path=secret/ kv #directory to store secrets on the vault server
 # the DB password is generated here and only ever stored in Vault (Terraform reads it for RDS)
 DB_PASSWORD=$(openssl rand -hex 16)
 vault kv put secret/database username=petclinic password="$DB_PASSWORD"
 unset DB_PASSWORD
+
+# Let the Jenkins EC2 role log in with AWS auth (no stored token needed by Terraform)
+vault policy write terraform - <<POLICY
+path "secret/database" {
+  capabilities = ["read"]
+}
+path "auth/token/create" {
+  capabilities = ["update"]
+}
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+POLICY
+vault auth enable aws
+vault write auth/aws/role/jenkins-terraform auth_type=iam \
+  bound_iam_principal_arn="${jenkins_role_arn}" policies=terraform ttl=1h
+
+# Revoke the root token: nothing on this server holds it any more
+vault token revoke -self
+unset VAULT_TOKEN
+
 # Set hostname to Vault
 sudo hostnamectl set-hostname Vault
