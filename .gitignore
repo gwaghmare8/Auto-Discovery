@@ -48,3 +48,5 @@ terraform.rc
 *.pem
 *.key
 secrets.auto.tfvars
+cleanup-iam.sh
+ARTICLE_DRAFT.md

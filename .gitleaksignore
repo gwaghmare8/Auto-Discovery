@@ -1,0 +1,5 @@
+# Gitleaks baseline: findings listed here are skipped by the pipeline's Secret Scan stage.
+# Only add a finding after the exposed secret has been rotated/revoked.
+
+# New Relic user API key in an early commit of jenkins-user-data.sh (key rotated and revoked)
+0962b678995a495c4d34a35e312b3665489e62b8:jenkins-vault/jenkins-user-data.sh:new-relic-user-api-key:84

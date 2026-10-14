@@ -3,6 +3,9 @@ cd jenkins-vault
 terraform init 
 terraform destroy -auto-approve
 
+# remove the Vault init secret so the name can be reused on the next create
+aws secretsmanager delete-secret --secret-id "auto-discovery/vault-init" --force-delete-without-recovery --region eu-west-1 || true
+
 BUCKET_NAME="auto-discovery-terraform-state"
 REGION="eu-west-1"
 DYNAMODB_TABLE="auto-discovery-terraform-state-dynamodb-lock"

@@ -140,10 +140,67 @@ resource "aws_iam_role_policy_attachment" "jenkins_ssm_managed_instance_core" {
   role       = aws_iam_role.jenkins-ssm-jenkins-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
-# Attach ADMINISTRATOR ACCESS policy to the role
-resource "aws_iam_role_policy_attachment" "jenkins-admin-role-attachment" {
-  role       = aws_iam_role.jenkins-ssm-jenkins-role.name
-  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+# Scoped permissions for the Terraform pipeline (replaces AdministratorAccess)
+resource "aws_iam_role_policy" "jenkins_terraform" {
+  name = "${local.name}-jenkins-terraform"
+  role = aws_iam_role.jenkins-ssm-jenkins-role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "InfrastructureServices"
+        Effect = "Allow"
+        Action = [
+          "ec2:*",
+          "elasticloadbalancing:*",
+          "autoscaling:*",
+          "rds:*",
+          "route53:*",
+          "acm:*",
+          "kms:Describe*",
+          "kms:CreateGrant",
+          "kms:ListGrants",
+          "kms:Decrypt",
+          "kms:GenerateDataKey*"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "IamReadOnly"
+        Effect   = "Allow"
+        Action   = ["iam:Get*", "iam:List*"]
+        Resource = "*"
+      },
+      {
+        Sid    = "IamForProjectRolesOnly"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole", "iam:DeleteRole", "iam:UpdateAssumeRolePolicy", "iam:TagRole", "iam:UntagRole",
+          "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
+          "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile", "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile", "iam:PassRole"
+        ]
+        Resource = [
+          "arn:aws:iam::*:role/auto-discovery-*",
+          "arn:aws:iam::*:role/ansible-discovery-*",
+          "arn:aws:iam::*:instance-profile/auto-discovery-*",
+          "arn:aws:iam::*:instance-profile/ansible-discovery-*"
+        ]
+      },
+      {
+        Sid      = "TerraformStateBucket"
+        Effect   = "Allow"
+        Action   = ["s3:*"]
+        Resource = ["arn:aws:s3:::auto-discovery-terraform-state", "arn:aws:s3:::auto-discovery-terraform-state/*"]
+      },
+      {
+        Sid      = "TerraformStateLock"
+        Effect   = "Allow"
+        Action   = ["dynamodb:*"]
+        Resource = "arn:aws:dynamodb:*:*:table/auto-discovery-terraform-state-dynamodb-lock"
+      }
+    ]
+  })
 }
 # CREATE INSTANCE PROFILE FOR JENKINS SERVER
 resource "aws_iam_instance_profile" "jenkins_ssm_instance_profile" {
@@ -301,9 +358,11 @@ resource "aws_instance" "vault" {
   }
   # User data script to install Jenkins and required tools
   user_data = templatefile("./vault-user-data.sh", {
-    region        = var.region,
-    VAULT_VERSION = "1.18.3",
-    key           = aws_kms_key.vault.id
+    region           = var.region,
+    VAULT_VERSION    = "1.18.3",
+    key              = aws_kms_key.vault.id
+    init_secret_name = var.vault_init_secret_name
+    jenkins_role_arn = aws_iam_role.jenkins-ssm-jenkins-role.arn
   })
   metadata_options {
     http_tokens = "required"
@@ -331,10 +390,11 @@ resource "aws_security_group" "vault_sg" {
   vpc_id      = aws_vpc.vpc.id
   # Inbound: HTTP on port 80
   ingress {
-    from_port   = 8200
-    to_port     = 8200
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 8200
+    to_port         = 8200
+    protocol        = "tcp"
+    description     = "Vault API, from the HTTPS load balancer only"
+    security_groups = [aws_security_group.vault_elb_security_group.id]
   }
   # Outbound: Allow all traffic (to EC2)
   egress {
@@ -472,4 +532,18 @@ resource "aws_route53_record" "jenkins-record" {
     zone_id                = aws_elb.elb_jenkins.zone_id
     evaluate_target_health = true
   }
+}
+
+# Allow the Vault server to store its init output (root token, recovery keys) in Secrets Manager
+resource "aws_iam_role_policy" "vault_init_secret" {
+  name = "${local.name}-vault-init-secret"
+  role = aws_iam_role.vault_ssm_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:CreateSecret", "secretsmanager:PutSecretValue"]
+      Resource = "arn:aws:secretsmanager:*:*:secret:${var.vault_init_secret_name}-*"
+    }]
+  })
 }
