@@ -161,9 +161,25 @@ resource "aws_iam_role_policy" "jenkins_terraform" {
           "kms:CreateGrant",
           "kms:ListGrants",
           "kms:Decrypt",
-          "kms:GenerateDataKey*"
+          "kms:GenerateDataKey*",
+          "kms:ReEncrypt*"
         ]
         Resource = "*"
+      },
+      {
+        Sid      = "ServiceLinkedRoles"
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole"]
+        Resource = "arn:aws:iam::*:role/aws-service-role/*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = [
+              "rds.amazonaws.com",
+              "autoscaling.amazonaws.com",
+              "elasticloadbalancing.amazonaws.com"
+            ]
+          }
+        }
       },
       {
         Sid      = "IamReadOnly"

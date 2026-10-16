@@ -50,3 +50,5 @@ terraform.rc
 secrets.auto.tfvars
 cleanup-iam.sh
 ARTICLE_DRAFT.md
+PIPELINE_FIXES.txt
+MANUAL_STEPS.txt
