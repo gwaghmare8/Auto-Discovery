@@ -40,7 +40,7 @@ resource "aws_iam_role_policy_attachment" "bastion-ssm-policy" {
 
 # create IAM instance profile
 resource "aws_iam_instance_profile" "bastion-ssm-profile" {
-  name = "bastion-ssm-profile"
+  name = "${var.name}-bastion-ssm-profile"
   role = aws_iam_role.bastion-ssm-role.name
 }
 
