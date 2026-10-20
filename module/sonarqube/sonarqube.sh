@@ -3,7 +3,9 @@
 set -e
 
 # === CONFIGURATION ===
-SONAR_VERSION="25.5.0.107428"
+# SonarSource only keeps recent Community Build zips online; if this download returns 403
+# the version has been removed - pick a current one from https://binaries.sonarsource.com/?prefix=Distribution/sonarqube/
+SONAR_VERSION="25.12.0.117093" 
 SONAR_USER="sonaruser"
 SONAR_DIR="/opt/sonarqube"
 DB_USER="sonar"
