@@ -85,6 +85,8 @@ resource "aws_instance" "sonarqube-server" {
   ])
   iam_instance_profile        = aws_iam_instance_profile.sonarqube_profile.name
   associate_public_ip_address = true
+  # user-data only runs on first boot, so replace the server whenever the script changes
+  user_data_replace_on_change = true
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
