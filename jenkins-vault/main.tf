@@ -182,6 +182,29 @@ resource "aws_iam_role_policy" "jenkins_terraform" {
         }
       },
       {
+        Sid      = "SsmRunCommandOnBastion"
+        Effect   = "Allow"
+        Action   = ["ssm:SendCommand"]
+        Resource = "arn:aws:ec2:*:*:instance/*"
+        Condition = {
+          StringEquals = {
+            "ssm:resourceTag/Name" = "auto-discovery-bastion-asg"
+          }
+        }
+      },
+      {
+        Sid      = "SsmRunCommandDocument"
+        Effect   = "Allow"
+        Action   = ["ssm:SendCommand"]
+        Resource = "arn:aws:ssm:*::document/AWS-RunShellScript"
+      },
+      {
+        Sid      = "SsmReadCommandResults"
+        Effect   = "Allow"
+        Action   = ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations", "ssm:DescribeInstanceInformation"]
+        Resource = "*"
+      },
+      {
         Sid      = "IamReadOnly"
         Effect   = "Allow"
         Action   = ["iam:Get*", "iam:List*"]

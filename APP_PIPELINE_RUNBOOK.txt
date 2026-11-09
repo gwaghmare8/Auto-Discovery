@@ -1,0 +1,229 @@
+AUTO-DISCOVERY - APPLICATION CI/CD PIPELINE RUNBOOK
+===================================================
+Purpose : Step-by-step setup of the Jenkins pipeline that builds, scans, packages and
+          deploys the Java application (Spring Petclinic), written from the handwritten
+          notes. Follow it in order on a freshly built environment.
+Rule    : Update this file whenever the user shares more steps or a step changes.
+          Never write secrets (passwords, tokens, keys) in this file.
+Related : MANUAL_STEPS.txt   = infrastructure runbook (Terraform, Vault, Jenkins build).
+                               Do its Phases 0-3 first. Some steps overlap (Terraform tool,
+                               Slack, Git credential, Nexus repos) - they are repeated here
+                               so this file stands alone.
+          PIPELINE_FIXES.txt = errors met so far and their fixes (B19, B20 are app-pipeline).
+
+Where each step runs:  [JENKINS] Jenkins UI   [NEXUS] Nexus UI   [SONAR] SonarQube UI
+                       [GITHUB] GitHub UI     [SERVER] Session Manager on an EC2 instance
+                       [MAC] your terminal    [SLACK] Slack
+
+Items marked [CONFIRM] were hard to read in the handwritten notes - please check them.
+
+
+-------------------------------------------------------------------------------
+OVERVIEW OF THE PIPELINE (stages of the application Jenkinsfile)
+-------------------------------------------------------------------------------
+ 1 Code Analysis (SonarQube)      7 Build Docker image
+ 2 Quality Gate                   8 Login to Nexus Docker repo
+ 3 Dependency check (OWASP)       9 Trivy image scan
+ 4 Build artifact (mvn package)  10 Push image to Nexus Docker repo
+ 5 Push WAR to Nexus (Maven)     11 Prune Docker images
+ 6 (Docker image build)          12 Deploy to Stage, then Prod (SSM -> bastion -> Ansible)
+                                 13 Check the prod website, notify Slack
+
+
+-------------------------------------------------------------------------------
+STEP 1 - START JENKINS AND INSTALL PLUGINS            [JENKINS]
+-------------------------------------------------------------------------------
+Manage Jenkins > Plugins > Available plugins. Install:
+  First batch : Stage View, Terraform, Slack Notification
+  Second batch: Docker, Docker Commons, SSH Agent, Maven Integration, SonarQube Scanner,
+                Nexus Artifact Uploader, AWS Credentials, HTML Publisher,
+                OWASP Dependency-Check, OWASP ZAP
+  (Pipeline, Git and Credentials Binding come with the standard install.)
+Restart Jenkins if it asks.
+
+
+-------------------------------------------------------------------------------
+STEP 2 - TERRAFORM TOOL                               [JENKINS]
+-------------------------------------------------------------------------------
+Manage Jenkins > Tools > Terraform installations > Add Terraform
+  Name    : terraform                          (must match the infra Jenkinsfile)
+  Install : Run Shell Command, with:
+      curl -fsSL https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip -o terraform.zip
+      unzip -o terraform.zip
+      mv terraform /usr/local/bin/terraform
+      chmod +x /usr/local/bin/terraform
+  Tool home: /usr/local/bin/terraform
+  Note    : If Jenkins later says the tool cannot be found, set the home to the
+            DIRECTORY /usr/local/bin instead of the file path.
+  Note    : Version 1.7.5 works with the current code (use_lockfile was removed, see B7).
+            A newer version is also fine.
+
+
+-------------------------------------------------------------------------------
+STEP 3 - SLACK                                        [SLACK] [JENKINS]
+-------------------------------------------------------------------------------
+a) [SLACK] Slack marketplace > add "Jenkins CI" > choose the channel for notification
+   alerts > copy the token.
+b) [JENKINS] Manage Jenkins > Credentials > System > Global > Add Credentials
+   Kind: Secret text | Secret: the Slack token | ID: slack-cred | Description: slack-cred
+c) [JENKINS] Manage Jenkins > System > Slack
+   Workspace: name of your Slack workspace | Credential: slack-cred
+   Channel: the channel you chose in (a).
+
+
+-------------------------------------------------------------------------------
+STEP 4 - GITHUB CREDENTIAL                            [GITHUB] [JENKINS]
+-------------------------------------------------------------------------------
+[GITHUB] Create a classic personal access token and keep the "repo" scope ticked.
+         (A fine-grained token with Contents: read-only also works for reading only.)
+[JENKINS] Add Credentials > Kind: Username with password
+          Username: your GitHub username | Password: the token | ID: git-cred
+
+
+-------------------------------------------------------------------------------
+STEP 5 - GITHUB WEBHOOK                               [JENKINS] [GITHUB]
+-------------------------------------------------------------------------------
+a) [JENKINS] Your profile (top right) > Security > Add new Token (API token), copy it.
+b) [GITHUB] Application repo (usteam, already forked) > Settings > Webhooks > Add webhook
+      Payload URL : https://jenkins.gaurav-devops.site/github-webhook/
+      Secret      : the value copied in (a)
+      Save.
+   The same webhook is also set up for the infrastructure repository.
+
+
+-------------------------------------------------------------------------------
+STEP 6 - CREATE THE PIPELINE JOB                      [JENKINS]
+-------------------------------------------------------------------------------
+New Item > enter a name (e.g. app-pipeline) > Pipeline > OK
+  Triggers   : tick "GitHub hook trigger for GITScm polling"
+  Definition : Pipeline script from SCM
+  SCM        : Git
+  Repo URL   : the application repository's HTTPS URL
+  Credentials: git-cred
+  Branch     : */main  (your latest runs used branch "rowland" - set the branch you use)
+  Save and Apply.
+
+
+-------------------------------------------------------------------------------
+STEP 7 - PREPARE THE JENKINS SERVER BEFORE THE FIRST BUILD        [SERVER]
+-------------------------------------------------------------------------------
+Notes say: "Before building the pipeline, run a script on Jenkins via Session Manager".
+[CONFIRM] which script. Likely items (do them on the Jenkins server):
+  - Passwordless sudo rule for the Nexus step (see MANUAL_STEPS.txt, Phase 3).
+  - Docker "insecure-registries" entry for NEXUS_IP:8085 in /etc/docker/daemon.json, then
+    restart Docker (Nexus serves the Docker registry over plain HTTP on port 8085).
+
+
+-------------------------------------------------------------------------------
+STEP 8 - NEXUS: PASSWORD, DOCKER REPO, MAVEN REPO     [SERVER]/[MAC] [NEXUS]
+-------------------------------------------------------------------------------
+a) Get the Nexus admin password. It is the value in AWS SSM Parameter Store:
+      aws ssm get-parameter --name /auto-discovery/nexus/admin-password \
+        --with-decryption --region eu-west-1 --query Parameter.Value --output text
+   (The old file /opt/sonatype-work/nexus3/admin.password only exists until the first
+   password change; our start-up script changes it, so use the SSM value.)
+b) [NEXUS] Log in as admin at https://nexus.gaurav-devops.site
+c) Docker repository: Settings > Repositories > Create repository > docker (hosted)
+      Name: docker-repo | HTTP: enable, port 8085 | Enable Docker V1 API | Create.
+d) Realms: Settings > Security > Realms > add "Docker Bearer Token Realm" (local
+   authentication) > Save.
+e) Maven repository: Settings > Repositories > Create repository > maven2 (hosted)
+      Name: nexus-repo | Version policy: Mixed | Deployment policy: Allow redeploy | Create.
+
+
+-------------------------------------------------------------------------------
+STEP 9 - NEXUS CREDENTIALS IN JENKINS                 [JENKINS]
+-------------------------------------------------------------------------------
+Manage Jenkins > Credentials > System > Global > Add Credentials:
+  a) Username with password : username admin, password = the Nexus admin password
+                              from SSM (Step 8a). ID: nexus-cred
+  b) Secret text : secret = admin                            ID: nexus-username
+  c) Secret text : secret = the Nexus admin password (SSM)   ID: nexus-password
+  d) Secret text : secret = NEXUS_PUBLIC_IP:8085 (get the IP from AWS)  ID: nexus-repo
+  Do NOT use any old or default password. If a password is rejected (401 Unauthorized on
+  the Nexus upload), the credential differs from the SSM value - re-enter it.
+
+
+-------------------------------------------------------------------------------
+STEP 10 - SONARQUBE TOKEN AND SERVER                  [SONAR] [JENKINS]
+-------------------------------------------------------------------------------
+a) [SONAR] Log in as admin (password = the SonarQube SSM parameter,
+   /auto-discovery/sonarqube/admin-password) > profile > My Account > Security >
+   Generate token. Copy it.
+b) [JENKINS] Add Credentials > Secret text | Secret: the token | ID: sonar-cred
+   Description: sonar-cred
+c) [JENKINS] Manage Jenkins > System > SonarQube servers > Add SonarQube
+      Name: sonarqube | Server URL: https://sonarqube.gaurav-devops.site/
+      Server authentication token: sonar-cred | Apply > Save.
+d) Webhook so the Quality Gate stage can report back [CONFIRM details]:
+   [SONAR] Administration > Configuration > Webhooks > Create
+      URL: https://jenkins.gaurav-devops.site/sonarqube-webhook/
+   Without it, "waitForQualityGate" times out.
+
+
+-------------------------------------------------------------------------------
+STEP 11 - OTHER CREDENTIALS                           [JENKINS]
+-------------------------------------------------------------------------------
+  a) NVD key for OWASP Dependency-Check
+     Kind Secret text | Secret: the NVD API key | ID: nvd-key
+     (Request the free key at https://nvd.nist.gov/developers/request-an-api-key)
+  b) New Relic key
+     Kind Secret text | Secret: the New Relic key | ID: api-key
+  c) Ansible SSH key
+     Kind: SSH Username with private key | ID: ansible-key | Description: Ansible-key
+     Username: ec2-user | Private key > Enter directly > Add > paste the key.
+     Get the key: [SERVER] Session Manager on the bastion, find the id_rsa path in the
+     bastion start-up script, then:   sudo cat /home/ubuntu/.ssh/id_rsa
+  d) Bastion SSH key
+     Kind: SSH Username with private key | ID: bastion-key | Description: bastion-key
+     Username: ubuntu | Private key: the key copied from the bastion host (same file).
+  e) Ansible server private IP
+     Kind Secret text | Secret: the Ansible server's PRIVATE IP | ID: ansible-ip
+  f) Bastion public IP
+     Kind Secret text | Secret: the bastion's PUBLIC IP | ID: bastion-ip
+  g) Bastion instance ID
+     Kind Secret text | Secret: the bastion's instance ID (i-...) | ID: bastion-id
+
+
+-------------------------------------------------------------------------------
+STEP 12 - TOOL INSTALLATIONS                          [JENKINS]
+-------------------------------------------------------------------------------
+Manage Jenkins > Tools:
+  JDK              : installation type "manual" - set JAVA_HOME to the directory of the
+                     Java installed on the Jenkins server (e.g. the Corretto 21 path).
+                     [CONFIRM the exact path used]
+  Dependency-Check : name DP-Check (must match the Jenkinsfile), install automatically
+  Maven            : install automatically (auto)
+
+
+-------------------------------------------------------------------------------
+STEP 13 - RUN                                         [JENKINS]
+-------------------------------------------------------------------------------
+Open the pipeline > Build Now. After editing the Jenkinsfile, ALWAYS start a new build;
+"Restart from stage" re-runs the OLD Jenkinsfile (see B19).
+
+
+-------------------------------------------------------------------------------
+CREDENTIALS THAT MUST BE REFRESHED AFTER EVERY INFRASTRUCTURE REBUILD
+-------------------------------------------------------------------------------
+Terraform regenerates the SSH key pair and the servers on each build, so these change:
+  nexus-repo     new Nexus public IP:8085 (also the IP in the Jenkinsfile docker commands)
+  nexus-cred, nexus-password   if the Nexus SSM password was changed
+  sonar-cred     new SonarQube server = new token
+  ansible-key, bastion-key     new private key
+  ansible-ip, bastion-ip, bastion-id   new addresses / instance ID
+  Jenkins itself: if Jenkins was rebuilt, repeat the whole runbook (Steps 1-12).
+
+
+-------------------------------------------------------------------------------
+KNOWN PIPELINE GOTCHAS (details in PIPELINE_FIXES.txt)
+-------------------------------------------------------------------------------
+- Code Analysis: use the full plugin name,
+    mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar        (B19)
+- Dependency check: pass the NVD key in a double-quoted string so it is substituted.
+- Docker login/push to Nexus needs the insecure-registry entry for NEXUS_IP:8085 on Jenkins.
+- Deploy stages: use region eu-west-1, substitute $ANSIBLE_IP with Groovy double quotes,
+  SSH with -i /home/ubuntu/.ssh/id_rsa, and the Ansible files live in
+  /home/ec2-user/ansible/ (playbook deployment.yaml).
+- The Jenkins IAM role needs ssm:SendCommand for the deploy stages (B20).
+- Nexus upload: 401 Unauthorized means nexus-cred does not match the real admin password.

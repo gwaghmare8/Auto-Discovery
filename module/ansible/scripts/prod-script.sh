@@ -5,7 +5,7 @@ set -x
 AWSCLI_PATH='/usr/local/bin/aws'
 INVENTORY_FILE='/home/ec2-user/ansible/prod_hosts'
 IPS_FILE='/home/ec2-user/ansible/prod.lists'
-ASG_NAME='prod-asg'
+ASG_NAME='auto-discovery-prod-asg'
 SSH_KEY_PATH='/home/ec2-user/.ssh/id_rsa'
 WAIT_TIME=20
 
