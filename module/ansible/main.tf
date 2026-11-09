@@ -105,6 +105,11 @@ resource "aws_iam_instance_profile" "IAM-ansible-profile" {
   role = aws_iam_role.ansible-IAM-role.name
 }
 resource "null_resource" "ansible-setup" {
+  # re-upload the scripts whenever any of them changes
+  triggers = {
+    scripts = sha1(join(",", [for f in sort(fileset("${path.module}/scripts", "*")) : filesha1("${path.module}/scripts/${f}")]))
+  }
+
   provisioner "local-exec" {
     command = <<EOT
       aws s3 cp --recursive ${path.module}/scripts/ s3://${var.artifacts_bucket}/ansible-script/ 

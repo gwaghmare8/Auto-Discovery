@@ -5,7 +5,7 @@ set -x
 AWSCLI_PATH='/usr/local/bin/aws'
 INVENTORY_FILE='/home/ec2-user/ansible/stage_hosts'
 IPS_FILE='/home/ec2-user/ansible/stage.lists'
-ASG_NAME='stage-asg'
+ASG_NAME='auto-discovery-stage-asg'
 SSH_KEY_PATH='/home/ec2-user/.ssh/id_rsa'
 WAIT_TIME=20
 
