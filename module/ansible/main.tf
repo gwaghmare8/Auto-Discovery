@@ -44,7 +44,7 @@ resource "aws_security_group" "ansible-security-group" {
 # Create Ansible Server
 resource "aws_instance" "ansible-server" {
   ami                    = data.aws_ami.redhat.id #rehat 
-  instance_type          = "t2.micro"
+  instance_type          = "t2.medium"            # t2.micro (1 GB) was OOM-killed during yum update
   iam_instance_profile   = aws_iam_instance_profile.IAM-ansible-profile.name
   vpc_security_group_ids = [aws_security_group.ansible-security-group.id]
   key_name               = var.keypair
