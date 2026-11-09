@@ -4,7 +4,14 @@ set -e
 # -------------------------------
 # 1️⃣ Update system & install dependencies
 # -------------------------------
-sudo yum update -y
+# Add swap first so package installs cannot be OOM-killed on small instances
+if ! swapon --show | grep -q swapfile; then
+  sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+fi
+# A full "yum update" is not needed (and was OOM-killed on t2.micro); install only what we need
 sudo yum install -y wget unzip curl git
 
 # -------------------------------
